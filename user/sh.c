@@ -254,6 +254,24 @@ void redraw_line(char *buffer, int cursor_pos, int len, u_int max_display_width)
 
 void readline(char *buf, u_int n)
 {
+	if (!iscons(0)) {
+		// 如果不是控制台（例如，是文件重定向），则使用简单的方式读取一行
+		int i = 0, r;
+		while (i < n - 1) {
+			// 从标准输入读取一个字符
+			r = read(0, buf + i, 1);
+			if (r <= 0) { // 如果读到文件末尾或发生错误，则退出
+				break;
+			}
+			// 如果读到换行符，则一行结束
+			if (buf[i] == '\n' || buf[i] == '\r') {
+				break;
+			}
+			i++;
+		}
+		buf[i] = 0; // 确保字符串以空字符结尾
+		return;     // 读取完毕，直接返回
+	}
 	int r;
 	int len = 0;		// 当前命令的逻辑长度
 	int cursor_pos = 0; // 当前光标在 buf 中的逻辑位置 (0到len之间)
