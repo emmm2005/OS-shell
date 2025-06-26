@@ -10,4 +10,9 @@
 
 void add_to_history(const char *cmd);
 
+struct Builtin {
+	const char *name; // 指令名
+	int (*handler)(int argc, char **argv); // 处理函数指针
+};
+
 #endif

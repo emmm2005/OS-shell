@@ -1,4 +1,5 @@
 #include <types.h>
+#include <printk.h>
 
 void *memcpy(void *dst, const void *src, size_t n)
 {
@@ -81,7 +82,7 @@ char *strcpy(char *dst, const char *src)
 	while ((*dst++ = *src++) != 0)
 	{
 	}
-
+	*dst = '\0';
 	return ret;
 }
 
@@ -139,7 +140,7 @@ char *strcat(char *dest, const char *src)
 	}
 	while ((*temp++ = *src++) != '\0')
 		; // 将 src 的内容复制到 dest 的末尾
-
+	*temp = '\0';
 	return dest; // 返回 dest 的起始地址
 }
 
@@ -206,79 +207,128 @@ int isspace(int c)
 			c == '\v');
 }
 
-size_t strspn(const char *s, const char *accept) {
-    const char *p;
-    const char *a;
-    size_t count = 0;
+size_t strspn(const char *s, const char *accept)
+{
+	const char *p;
+	const char *a;
+	size_t count = 0;
 
-    for (p = s; *p != '\0'; ++p) {
-        for (a = accept; *a != '\0'; ++a) {
-            if (*p == *a) {
-                break;
-            }
-        }
-        if (*a == '\0') {
-            return count;
-        }
-        ++count;
-    }
+	for (p = s; *p != '\0'; ++p)
+	{
+		for (a = accept; *a != '\0'; ++a)
+		{
+			if (*p == *a)
+			{
+				break;
+			}
+		}
+		if (*a == '\0')
+		{
+			return count;
+		}
+		++count;
+	}
 
-    return count;
+	return count;
 }
 
-size_t strcspn(const char *s, const char *reject) {
-    const char *p;
-    const char *r;
-    size_t count = 0;
+size_t strcspn(const char *s, const char *reject)
+{
+	const char *p;
+	const char *r;
+	size_t count = 0;
 
-    for (p = s; *p != '\0'; ++p) {
-        for (r = reject; *r != '\0'; ++r) {
-            if (*p == *r) {
-                return count;
-            }
-        }
-        ++count;
-    }
+	for (p = s; *p != '\0'; ++p)
+	{
+		for (r = reject; *r != '\0'; ++r)
+		{
+			if (*p == *r)
+			{
+				return count;
+			}
+		}
+		++count;
+	}
 
-    return count;
+	return count;
 }
 
 static char *last_token = NULL;
 
-char *strtok(char *str, const char *delim) {
-    char *token;
+char *strtok(char *str, const char *delim)
+{
+	char *token;
 
-    // 如果 str 不为 NULL，表示开始一次新的切分。
-    if (str != NULL) {
-        last_token = str;
-    }
+	// 如果 str 不为 NULL，表示开始一次新的切分。
+	if (str != NULL)
+	{
+		last_token = str;
+	}
 
-    // 如果 last_token 为 NULL，表示上一次切分已经结束。
-    if (last_token == NULL) {
-        return NULL;
-    }
+	// 如果 last_token 为 NULL，表示上一次切分已经结束。
+	if (last_token == NULL)
+	{
+		return NULL;
+	}
 
-    // 1. 跳过所有前导的分隔符。
-    last_token += strspn(last_token, delim);
-    if (*last_token == '\0') {
-        // 如果已经到了字符串末尾，说明没有 token 了。
-        last_token = NULL;
-        return NULL;
-    }
+	// 1. 跳过所有前导的分隔符。
+	last_token += strspn(last_token, delim);
+	if (*last_token == '\0')
+	{
+		// 如果已经到了字符串末尾，说明没有 token 了。
+		last_token = NULL;
+		return NULL;
+	}
 
-    // 2. 找到了 token 的开头，现在寻找 token 的结尾。
-    token = last_token;
-    last_token += strcspn(last_token, delim);
+	// 2. 找到了 token 的开头，现在寻找 token 的结尾。
+	token = last_token;
+	last_token += strcspn(last_token, delim);
 
-    // 3. 如果我们还没到字符串的末尾，
-    //    就在 token 的结尾处放置一个 '\0'，并更新 last_token 以便下次调用。
-    if (*last_token != '\0') {
-        *last_token = '\0';
-        last_token++;
-    } else {
-        // 如果已经到了字符串的末尾，下次调用应该返回 NULL。
-        last_token = NULL;
-    }
+	// 3. 如果我们还没到字符串的末尾，
+	//    就在 token 的结尾处放置一个 '\0'，并更新 last_token 以便下次调用。
+	if (*last_token != '\0')
+	{
+		*last_token = '\0';
+		last_token++;
+	}
+	else
+	{
+		// 如果已经到了字符串的末尾，下次调用应该返回 NULL。
+		last_token = NULL;
+	}
 
-    return token;
+	return token;
+}
+
+char *strrchr(const char *s, int c)
+{
+	// 用于存储最后一次找到的字符位置的指针
+	char *last_occurrence = NULL;
+
+	// 将传入的 int 类型的 c 转换为 char 类型，这是函数内部实际比较的类型
+	const char char_to_find = (char)c;
+
+	// 检查输入字符串是否为 NULL
+	if (s == NULL)
+	{
+		return NULL;
+	}
+
+	// 使用 do-while 循环来确保我们也能处理 s 指向的第一个字符，
+	// 并且能够检查到字符串末尾的空字符 '\0'。
+	do
+	{
+		// 如果当前字符等于要查找的字符
+		if (*s == char_to_find)
+		{
+			// 更新 last_occurrence 指针，使其指向当前位置。
+			// 因为我们持续向后遍历，所以这个指针最终会指向最后一次出现的位置。
+			// 注意：这里需要进行一次类型转换，因为 s 是 const char*，而函数返回 char*。
+			// 在实际库函数中，这种转换是允许的，因为它假定用户不会通过返回的指针去修改一个常量字符串。
+			last_occurrence = (char *)s;
+		}
+	} while (*s++ != '\0'); // 继续循环直到我们处理完字符串末尾的空字符 '\0'
+
+	// 返回最后找到的位置，如果没找到则返回 NULL
+	return last_occurrence;
 }

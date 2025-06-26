@@ -12,11 +12,20 @@ int history_index = 0;					   // 当前用户在历史记录中的位置 (用于
 int builtin_history(int argc, char **argv);
 int builtin_cd(int argc, char **argv);
 int builtin_pwd(int argc, char **argv);
+int builtin_exit(int argc, char **argv);
+int builtin_declare(int argc, char **argv);
+int builtin_unset(int argc, char **argv);
+// extern int resolve_path(const char *old_path, char *resolved_path);
+
+int envid;
 
 struct Builtin builtins[] = {
 	{"history", builtin_history},
 	{"pwd", builtin_pwd},
 	{"cd", builtin_cd},
+	{"exit", builtin_exit},
+	{"declare", builtin_declare},
+	{"unset", builtin_unset},
 	{NULL, NULL} // 数组结束标记
 };
 
@@ -58,6 +67,22 @@ int _gettoken(char *s, char **p1, char **p2)
 		int t = *s;
 		*p1 = s;
 		*s++ = 0;
+		if (t == '>' && *s == '>')
+		{
+			t = 's'; // replace >>
+			*s++;
+		}
+		else if (t == '&' && *s == '&')
+		{
+			t = 'y'; // replace &&
+			*s++;
+		}
+		else if (t == '|' && *s == '|')
+		{
+			t = 'h'; // replace ||
+			*s++;
+		}
+
 		*p2 = s;
 		return t;
 	}
@@ -120,7 +145,15 @@ int parsecmd(char **argv, int *rightpipe)
 			// utilize 'debugf' to print relevant messages,
 			// and subsequently terminate the process using 'exit'.
 			/* Exercise 6.5: Your code here. (1/3) */
-			fd = open(t, O_RDONLY);
+			char old_path[1024];
+			char path[1024];
+			syscall_get_cwd(0, path);
+			// printf("%s\n", path);
+			strcpy(old_path, t);
+			// printf("%s\n", old_path);
+			resolve_path(old_path, path);
+			// printf("%s\n", path);
+			fd = open(path, O_RDONLY);
 			if (fd < 0)
 			{
 				debugf("failed to open '%s'\n", t);
@@ -144,7 +177,15 @@ int parsecmd(char **argv, int *rightpipe)
 			// utilize 'debugf' to print relevant messages,
 			// and subsequently terminate the process using 'exit'.
 			/* Exercise 6.5: Your code here. (2/3) */
-			fd = open(t, O_WRONLY | O_CREAT | O_TRUNC);
+			char old_path1[1024];
+			char path1[1024];
+			syscall_get_cwd(0, path1);
+			// printf("%s\n", path);
+			strcpy(old_path1, t);
+			// printf("%s\n", old_path);
+			resolve_path(old_path1, path1);
+			// printf("%s\n", path);
+			fd = open(path1, O_WRONLY | O_CREAT | O_TRUNC);
 			if (fd < 0)
 			{
 				debugf("failed to open '%s'\n", t);
@@ -155,6 +196,35 @@ int parsecmd(char **argv, int *rightpipe)
 
 			// user_panic("> redirection not implemented");
 
+			break;
+		case 's':
+			if (gettoken(0, &t) != 'w')
+			{
+				debugf("syntax error: > not followed by word\n");
+				exit();
+			}
+			// Open 't' for writing, create it if not exist and trunc it if exist, dup
+			// it onto fd 1, and then close the original fd.
+			// If the 'open' function encounters an error,
+			// utilize 'debugf' to print relevant messages,
+			// and subsequently terminate the process using 'exit'.
+			/* Exercise 6.5: Your code here. (2/3) */
+			char old_path2[1024];
+			char path2[1024];
+			syscall_get_cwd(0, path2);
+			// printf("%s\n", path);
+			strcpy(old_path2, t);
+			// printf("%s\n", old_path);
+			resolve_path(old_path2, path2);
+			// printf("%s\n", path);
+			fd = open(path2, O_WRONLY | O_CREAT | O_APPEND);
+			if (fd < 0)
+			{
+				debugf("failed to open '%s'\n", t);
+				exit();
+			}
+			dup(fd, 1);
+			close(fd);
 			break;
 		case '|':;
 			/*
@@ -205,37 +275,170 @@ int parsecmd(char **argv, int *rightpipe)
 			// user_panic("| not implemented");
 
 			break;
+		case ';':
+			int child = fork();
+			if (child < 0)
+			{
+				exit();
+			}
+			else if (child == 0)
+			{
+				return argc;
+			}
+			else
+			{
+				wait(child);
+				return parsecmd(argv, rightpipe);
+			}
+			break;
+		case 'y':
+			int childand = fork();
+			if (childand < 0)
+			{
+				exit();
+			}
+			else if (childand == 0)
+			{
+				return argc;
+			}
+			else
+			{
+				wait(childand);
+				if (strcmp(argv[0], "/mkdir"))
+				{
+					return parsecmd(argv, rightpipe);
+				}
+				else
+				{
+					return 0;
+				}
+			}
+			break;
+		case 'h':
+			int childor = fork();
+			if (childor < 0)
+			{
+				exit();
+			}
+			else if (childor == 0)
+			{
+				return argc;
+			}
+			else
+			{
+				wait(childor);
+				if (strcmp(argv[0], "/mkdir"))
+				{
+					return 0;
+				}
+				else
+				{
+					return parsecmd(argv, rightpipe);
+				}
+			}
+			break;
 		}
 	}
 
 	return argc;
 }
 
+void handle_backquotes(char *cmd, char *finish_cmd)
+{
+	static char sub_cmd_output[1024];
+
+	char *start_bq, *end_bq;
+	char *p_read = cmd;
+	char *p_write = finish_cmd;
+
+	finish_cmd[0] = '\0';
+
+	while ((start_bq = strchr(p_read, '`')) != NULL)
+	{
+		end_bq = strchr(start_bq + 1, '`');
+		if (end_bq == NULL)
+		{
+			strcat(p_write, p_read);
+			return;
+		}
+
+		strncat(p_write, p_read, start_bq - p_read);
+		p_write += (start_bq - p_read);
+
+		char sub_cmd[1024];
+		strncpy(sub_cmd, start_bq + 1, end_bq - (start_bq + 1));
+		sub_cmd[end_bq - (start_bq + 1)] = '\0';
+
+		int p[2];
+		pipe(p);
+		int r;
+		if ((r = fork()) < 0)
+		{
+			user_panic("fork error");
+		}
+		if (r == 0)
+		{
+			dup(p[1], 1);
+			close(p[0]);
+			close(p[1]);
+
+			runcmd(sub_cmd);
+			exit();
+		}
+		else
+		{
+			close(p[1]);
+			int n;
+			int output_num = 0;
+			while ((n = read(p[0], sub_cmd_output + output_num, sizeof(sub_cmd_output) - output_num - 1)) > 0)
+			{
+				output_num += n;
+			}
+			sub_cmd_output[output_num] = '\0';
+			close(p[0]);
+			wait(r);
+		}
+		if (strlen(sub_cmd_output) > 0 && sub_cmd_output[strlen(sub_cmd_output) - 1] == '\n')
+		{
+			sub_cmd_output[strlen(sub_cmd_output) - 1] = '\0';
+		}
+		strcat(p_write, sub_cmd_output);
+		p_write += strlen(sub_cmd_output);
+
+		p_read = end_bq + 1;
+	}
+	strcat(p_write, p_read);
+}
+
 void runcmd(char *s)
 {
-	gettoken(s, 0);
+	char final_cmd[1024];
+	handle_backquotes(s, final_cmd);
+	gettoken(final_cmd, 0);
 
 	char *argv[MAXARGS];
 	int rightpipe = 0;
 	int argc = parsecmd(argv, &rightpipe);
 	if (argc == 0)
 	{
-		exit();
+		return;
 	}
 	argv[argc] = 0;
 
-	struct Builtin *b;
-	for (b = builtins; b->name != NULL; b++)
+	if (strcmp(argv[0], "cd") == 0)
 	{
-		if (strcmp(argv[0], b->name) == 0)
-		{
-			// 注意：cd 的处理逻辑在 main 函数中，这里不会匹配到 cd
-			// 但为了代码的完整性，我们调用所有内置指令的 handler
-			b->handler(argc, argv);
-			// handler 执行完毕后，子进程的使命就完成了
-			// 但需要正确处理管道
-			goto pipe_cleanup;
-		}
+		builtin_cd(argc, argv);
+		return; // 跳过 fork-runcmd 流程
+	}
+	if (strcmp(argv[0], "pwd") == 0)
+	{
+		builtin_pwd(argc, argv);
+		return; // 跳过 fork-runcmd 流程
+	}
+	if (strcmp(argv[0], "exit") == 0)
+	{
+		builtin_exit(argc, argv); // 直接调用，不会返回
+		return;
 	}
 
 	// 如果 for 循环结束都没有找到匹配的内置指令，说明是外部命令
@@ -249,11 +452,8 @@ void runcmd(char *s)
 	{
 		debugf("spawn %s: %d\n", argv[0], child);
 	}
-
-pipe_cleanup:
 	if (rightpipe)
 	{
-		close(1); // 确保管道写入端关闭
 		wait(rightpipe);
 	}
 	exit();
@@ -629,17 +829,99 @@ int builtin_pwd(int argc, char **argv)
 
 	// 3. 诊断：打印 env_cwd 的内存地址和第一个字符的ASCII码
 	// 这可以帮助我们确认指针指向的位置和内容的初始部分是否正确
-	//printf("Debug: env_cwd address: %x, first char: %d\n", env->env_cwd, (int)env->env_cwd[0]);
+	// printf("Debug: env_cwd address: %x, first char: %d\n", env->env_cwd, (int)env->env_cwd[0]);
 
 	// 4. 核心功能：打印工作目录
+	int envid;
 	char tem_path[1024] = {0};
-	strcpy(tem_path,env->env_cwd);
-	printf("%s\n",tem_path);
+	try(syscall_get_cwd(envid, tem_path));
+	printf("%s\n", tem_path);
 	return 0;
 }
 
-int builtin_cd(int argc, char **argv) {
-    return 0;
+int builtin_cd(int argc, char **argv)
+{
+	if (argc > 2)
+	{
+		printf("Too many args for cd command\n");
+		return 1;
+	}
+
+	const char target_path[1024];
+	char resolved_path[1024];
+
+	if (argc == 1)
+	{
+		strcat(target_path, "/");
+		resolve_path("/", resolved_path);
+	}
+	else
+	{
+		// printf("1\n");
+		strcpy(target_path, argv[1]);
+		// printf("2\n");
+		resolve_path(target_path, resolved_path);
+		// printf("2\n");
+	}
+
+	// 使用静态缓冲区来接收 stat 的结果，避免栈写入
+	struct Stat st;
+	int r = stat(resolved_path, &st);
+	// printf("3\n");
+
+	if (r < 0)
+	{
+		printf("cd: The directory '%s' does not exist\n", target_path);
+		return 1;
+	}
+	if (!st.st_isdir)
+	{
+		printf("cd: '%s' is not a directory\n", target_path);
+		return 1;
+	}
+
+	// printf("1\n");
+	if (*resolved_path == '\0')
+	{
+		strcat(resolved_path, "/");
+	}
+
+	syscall_set_cwd(syscall_getenvid(), resolved_path);
+	return 0;
+}
+
+int builtin_exit(int argc, char **argv)
+{
+	// exit 指令不接受任何参数，但我们保持宽容
+	exit();	  // 调用系统调用，终止当前进程
+	return 0; // 这行实际上不会被执行
+}
+
+int builtin_declare(int argc, char **argv)
+{
+	int x_flag = 0;
+	int r_flag = 0;
+	ARGBEGIN
+	{
+	case 'x':
+		x_flag = 2;
+		break;
+	case 'r':
+		r_flag = 1;
+		break;
+	default:;
+	}
+	ARGEND
+	// 遍历参数，解析参数，完成存储
+	// 将环境变量存储到env中，通过系统调用实现
+	
+	return 0;
+}
+
+int builtin_unset(int argc, char **argv)
+{
+	// 通过系统调用完成环境变量的删除
+	return 0;
 }
 
 char buf[1024];
@@ -705,6 +987,14 @@ int main(int argc, char **argv)
 		{
 			add_to_history(buf);
 		}
+		for (int i = 0; i < strlen(buf); i++)
+		{
+			if (buf[i] == '#')
+			{
+				buf[i] = '\0';
+				break;
+			}
+		}
 
 		// 如果命令为空白行或只有注释，parsecmd 可能返回 argc=0
 		if (buf[0] == '\0' && !iscons(0))
@@ -715,37 +1005,29 @@ int main(int argc, char **argv)
 		{
 			continue; // 继续下一个循环
 		}
-		char cmd_copy[1024];
-		strcpy(cmd_copy, buf); // 备份命令
-
-		char *argv_main[MAXARGS];
-		int argc_main = 0;
-		char *t;
-
-		// 解析命令和参数，只为了判断是否是 cd
-		gettoken(cmd_copy, 0);
-		if (gettoken(0, &t) == 'w')
+		if (buf[0] == 'c' && buf[1] == 'd')
 		{
-			argv_main[argc_main++] = t;
-			while (gettoken(0, &t) == 'w' && argc_main < MAXARGS - 1)
+			// printf("1\n");
+			gettoken(buf, 0);
+
+			char *argv[MAXARGS];
+			int rightpipe = 0;
+			int argc = parsecmd(argv, &rightpipe);
+			if (argc == 0)
 			{
-				argv_main[argc_main++] = t;
+				exit();
 			}
-			argv_main[argc_main] = NULL;
-		}
-
-		// 检查第一个参数是否为 "cd"
-		if (argc_main > 0 && strcmp(argv_main[0], "cd") == 0)
-		{
-			// 如果是 cd，就在父进程中直接执行并继续循环
-			builtin_cd(argc_main, argv_main);
-			continue; // 跳过 fork-runcmd 流程
+			argv[argc] = 0;
+			// printf("1\n");
+			builtin_cd(argc, argv);
+			continue;
 		}
 
 		if (echocmds)
 		{
 			printf("# %s\n", buf);
 		}
+		// printf("1\n");
 		if ((r = fork()) < 0)
 		{
 			user_panic("fork: %d", r);

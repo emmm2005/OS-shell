@@ -284,6 +284,7 @@ int sys_exofork(void)
 	/* Exercise 4.9: Your code here. (4/4) */
 	e->env_status = ENV_NOT_RUNNABLE;
 	e->env_pri = curenv->env_pri;
+	strcpy(e->env_cwd, curenv->env_cwd);
 
 	return e->env_id;
 }
@@ -618,6 +619,28 @@ int sys_read_dev(u_int va, u_int pa, u_int len)
 	return 0;
 }
 
+int sys_get_cwd(u_int envid, char *buf)
+{
+	struct Env *e;
+	if (envid2env(envid, &e, 0) < 0)
+	{
+		return -E_BAD_ENV;
+	}
+	strcpy(buf, e->env_cwd);
+	return 0;
+}
+
+int sys_set_cwd(u_int envid, char *buf)
+{
+	struct Env *e;
+	if (envid2env(envid, &e, 0) < 0)
+	{
+		return -E_BAD_ENV;
+	}
+	strcpy(e->env_cwd, buf);
+	return 0;
+}
+
 void *syscall_table[MAX_SYSNO] = {
 	[SYS_putchar] = sys_putchar,
 	[SYS_print_cons] = sys_print_cons,
@@ -637,6 +660,8 @@ void *syscall_table[MAX_SYSNO] = {
 	[SYS_cgetc] = sys_cgetc,
 	[SYS_write_dev] = sys_write_dev,
 	[SYS_read_dev] = sys_read_dev,
+	[SYS_get_cwd] = sys_get_cwd,
+	[SYS_set_cwd] = sys_set_cwd,
 };
 
 /* Overview:

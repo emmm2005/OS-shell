@@ -118,6 +118,7 @@ int read_map(int fd, u_int offset, void **blk);
 int remove(const char *path);
 int ftruncate(int fd, u_int size);
 int sync(void);
+int resolve_path(const char *old_path, char *resolved_path);
 
 #define user_assert(x)                                                                             \
 	do {                                                                                       \
@@ -132,6 +133,7 @@ int sync(void);
 #define O_ACCMODE 0x0003 /* mask for above modes */
 #define O_CREAT 0x0100	 /* create if nonexistent */
 #define O_TRUNC 0x0200	 /* truncate to zero length */
+#define O_APPEND 0x0004	 /* append
 
 // Unimplemented open modes
 #define O_EXCL 0x0400  /* error if already exists */

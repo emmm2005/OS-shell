@@ -91,3 +91,12 @@ int syscall_read_dev(void *va, u_int dev, u_int size)
 	/* Exercise 5.2: Your code here. (2/2) */
 	return msyscall(SYS_read_dev, va, dev, size);
 }
+
+int syscall_get_cwd(u_int envid, char *buf){
+	return msyscall(SYS_get_cwd, envid, buf);
+}
+
+int syscall_set_cwd(u_int envid, char *buf)
+{
+	return msyscall(SYS_set_cwd, envid, buf);
+}

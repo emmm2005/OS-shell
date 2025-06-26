@@ -302,3 +302,70 @@ int sync(void)
 {
 	return fsipc_sync();
 }
+
+void path_normalize(char *path)
+{
+	char *p, *q;
+	p = path;
+	q = path;
+	while (*p != '\0')
+	{
+		if (*p == '/')
+		{
+			if (p[1] == '.' && p[2] == '.' && (p[3] == '/' || p[3] == '\0'))
+			{
+				p += 3;
+				if (q > path)
+				{
+					do
+					{
+						q--;
+					} while (*q != '/');
+				}
+			}
+			else if (p[1] == '.' && (p[2] == '/' || p[2] == '\0'))
+			{
+				p += 2;
+			}
+			else
+			{
+				*q++ = *p++;
+			}
+		}
+		while (*p != '/' && *p != '\0')
+		{
+			*q++ = *p++;
+		}
+	}
+
+	if (q > path + 1 && *(q - 1) == '/')
+	{
+		q--;
+	}
+	*q = '\0';
+}
+
+int resolve_path(const char *old_path, char *resolved_path)
+{
+	int envid;
+	if (old_path[0] != '/')
+	{
+		char cwd[1024];
+		//printf("1\n");
+		syscall_get_cwd(envid, cwd);
+		strcpy(resolved_path, cwd);
+		if (strcmp(cwd, "/") != 0)
+		{
+			strcat(resolved_path, "/");
+		}
+		strcat(resolved_path, old_path);
+	}
+	else
+	{
+		//printf("3\n");
+		strcpy(resolved_path, old_path);
+		//printf("2\n");
+	}
+	path_normalize(resolved_path);
+	return 0;
+}

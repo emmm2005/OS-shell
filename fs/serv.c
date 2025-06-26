@@ -164,11 +164,29 @@ void serve_open(u_int envid, struct Fsreq_open *rq)
 		return;
 	}
 
-	if ((rq->req_omode & O_CREAT) && (r = file_create(rq->req_path, &f)) < 0 &&
-		r != -E_FILE_EXISTS)
+	if (rq->req_omode & O_CREAT)
 	{
-		ipc_send(envid, r, 0, 0);
-		return;
+		if ((r = file_create(rq->req_path, &f)) < 0 && r != -E_FILE_EXISTS)
+		{
+			ipc_send(envid, r, 0, 0);
+			return;
+		}
+		else if (r != -E_FILE_EXISTS)
+		{
+			f->f_type = FTYPE_REG;
+		}
+	}
+	else if (rq->req_omode & O_MKDIR)
+	{
+		if ((r = file_create(rq->req_path, &f)) < 0 && r != -E_FILE_EXISTS)
+		{
+			ipc_send(envid, r, 0, 0);
+			return;
+		}
+		else if (r != -E_FILE_EXISTS)
+		{
+			f->f_type = FTYPE_DIR;
+		}
 	}
 
 	// Open the file.
@@ -197,6 +215,11 @@ void serve_open(u_int envid, struct Fsreq_open *rq)
 	o->o_mode = rq->req_omode;
 	ff->f_fd.fd_omode = o->o_mode;
 	ff->f_fd.fd_dev_id = devfile.dev_id;
+	if (rq->req_omode & O_APPEND)
+	{
+		ff->f_fd.fd_offset = ff->f_file.f_size;
+	}
+
 	ipc_send(envid, 0, o->o_ff, PTE_D | PTE_LIBRARY);
 }
 

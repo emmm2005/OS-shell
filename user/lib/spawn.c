@@ -124,13 +124,20 @@ int spawn(char *prog, char **argv)
 {
 	// Step 1: Open the file 'prog' (the path of the program).
 	// Return the error if 'open' fails.
+	char tmp[MAXPATHLEN];
+	if (prog[0] != '.') {
+		strcpy(tmp, "/");
+		strcpy(tmp + 1, prog);
+	} else {
+		strcpy(tmp, prog);
+	}
 	int fd;
-	if ((fd = open(prog, O_RDONLY)) < 0)
+	if ((fd = open(tmp, O_RDONLY)) < 0)
 	{
 		// 增加无后缀命令
 		// TODO: 考虑是否添加strcat
-		strcat(prog, ".b");
-		if ((fd = open(prog, O_RDONLY)) < 0)
+		strcat(tmp, ".b");
+		if ((fd = open(tmp, O_RDONLY)) < 0)
 		{
 			return fd;
 		}
