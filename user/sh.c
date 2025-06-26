@@ -506,6 +506,28 @@ void add_to_history(const char *cmd)
 		history_count++;
 	}
 	history_index = history_count; // 每次添加新命令后，将历史索引重置到末尾
+	int fd = open(HISTFILE, O_CREAT | O_WRONLY | O_TRUNC);
+	if (fd < 0) {
+		debugf("history: failed to open %s\n", HISTFILE);
+		return;
+	}
+
+	// 遍历内存中的所有历史记录并写入文件
+	for (int i = 0; i < history_count; i++) {
+		int len = strlen(history_commands[i]);
+		if (write(fd, history_commands[i], len) != len) {
+			debugf("history: failed to write command\n");
+			close(fd);
+			return;
+		}
+		if (write(fd, "\n", 1) != 1) {
+			debugf("history: failed to write newline\n");
+			close(fd);
+			return;
+		}
+	}
+
+	close(fd);
 }
 
 int history(int argc, char **argv)
@@ -586,6 +608,9 @@ int main(int argc, char **argv)
 		add_to_history(buf); // 将原始输入的命令字符串添加到历史
 
 		// 如果命令为空白行或只有注释，parsecmd 可能返回 argc=0
+		if (buf[0] == '\0' && !iscons(0)) {
+			exit();
+		}
 		if (buf[0] == '#')
 		{
 			continue; // 继续下一个循环
