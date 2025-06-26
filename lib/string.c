@@ -205,3 +205,80 @@ int isspace(int c)
 			c == '\t' ||
 			c == '\v');
 }
+
+size_t strspn(const char *s, const char *accept) {
+    const char *p;
+    const char *a;
+    size_t count = 0;
+
+    for (p = s; *p != '\0'; ++p) {
+        for (a = accept; *a != '\0'; ++a) {
+            if (*p == *a) {
+                break;
+            }
+        }
+        if (*a == '\0') {
+            return count;
+        }
+        ++count;
+    }
+
+    return count;
+}
+
+size_t strcspn(const char *s, const char *reject) {
+    const char *p;
+    const char *r;
+    size_t count = 0;
+
+    for (p = s; *p != '\0'; ++p) {
+        for (r = reject; *r != '\0'; ++r) {
+            if (*p == *r) {
+                return count;
+            }
+        }
+        ++count;
+    }
+
+    return count;
+}
+
+static char *last_token = NULL;
+
+char *strtok(char *str, const char *delim) {
+    char *token;
+
+    // 如果 str 不为 NULL，表示开始一次新的切分。
+    if (str != NULL) {
+        last_token = str;
+    }
+
+    // 如果 last_token 为 NULL，表示上一次切分已经结束。
+    if (last_token == NULL) {
+        return NULL;
+    }
+
+    // 1. 跳过所有前导的分隔符。
+    last_token += strspn(last_token, delim);
+    if (*last_token == '\0') {
+        // 如果已经到了字符串末尾，说明没有 token 了。
+        last_token = NULL;
+        return NULL;
+    }
+
+    // 2. 找到了 token 的开头，现在寻找 token 的结尾。
+    token = last_token;
+    last_token += strcspn(last_token, delim);
+
+    // 3. 如果我们还没到字符串的末尾，
+    //    就在 token 的结尾处放置一个 '\0'，并更新 last_token 以便下次调用。
+    if (*last_token != '\0') {
+        *last_token = '\0';
+        last_token++;
+    } else {
+        // 如果已经到了字符串的末尾，下次调用应该返回 NULL。
+        last_token = NULL;
+    }
+
+    return token;
+}

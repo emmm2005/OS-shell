@@ -9,6 +9,17 @@ char history_commands[HISTFILESIZE][1024]; // 假设每条指令最大1024字节
 int history_count = 0;					   // 当前历史指令数量
 int history_index = 0;					   // 当前用户在历史记录中的位置 (用于 Up/Down)
 
+int builtin_history(int argc, char **argv);
+int builtin_cd(int argc, char **argv);
+int builtin_pwd(int argc, char **argv);
+
+struct Builtin builtins[] = {
+	{"history", builtin_history},
+	{"pwd", builtin_pwd},
+	{"cd", builtin_cd},
+	{NULL, NULL} // 数组结束标记
+};
+
 /* Overview:
  *   Parse the next token from the string at s.
  *
@@ -207,19 +218,42 @@ void runcmd(char *s)
 	char *argv[MAXARGS];
 	int rightpipe = 0;
 	int argc = parsecmd(argv, &rightpipe);
-	if (argc == 0) {
-		return;
+	if (argc == 0)
+	{
+		exit();
 	}
 	argv[argc] = 0;
 
+	struct Builtin *b;
+	for (b = builtins; b->name != NULL; b++)
+	{
+		if (strcmp(argv[0], b->name) == 0)
+		{
+			// 注意：cd 的处理逻辑在 main 函数中，这里不会匹配到 cd
+			// 但为了代码的完整性，我们调用所有内置指令的 handler
+			b->handler(argc, argv);
+			// handler 执行完毕后，子进程的使命就完成了
+			// 但需要正确处理管道
+			goto pipe_cleanup;
+		}
+	}
+
+	// 如果 for 循环结束都没有找到匹配的内置指令，说明是外部命令
 	int child = spawn(argv[0], argv);
 	close_all();
-	if (child >= 0) {
+	if (child >= 0)
+	{
 		wait(child);
-	} else {
+	}
+	else
+	{
 		debugf("spawn %s: %d\n", argv[0], child);
 	}
-	if (rightpipe) {
+
+pipe_cleanup:
+	if (rightpipe)
+	{
+		close(1); // 确保管道写入端关闭
 		wait(rightpipe);
 	}
 	exit();
@@ -254,23 +288,27 @@ void redraw_line(char *buffer, int cursor_pos, int len, u_int max_display_width)
 
 void readline(char *buf, u_int n)
 {
-	if (!iscons(0)) {
+	if (!iscons(0))
+	{
 		// 如果不是控制台（例如，是文件重定向），则使用简单的方式读取一行
 		int i = 0, r;
-		while (i < n - 1) {
+		while (i < n - 1)
+		{
 			// 从标准输入读取一个字符
 			r = read(0, buf + i, 1);
-			if (r <= 0) { // 如果读到文件末尾或发生错误，则退出
+			if (r <= 0)
+			{ // 如果读到文件末尾或发生错误，则退出
 				break;
 			}
 			// 如果读到换行符，则一行结束
-			if (buf[i] == '\n' || buf[i] == '\r') {
+			if (buf[i] == '\n' || buf[i] == '\r')
+			{
 				break;
 			}
 			i++;
 		}
 		buf[i] = 0; // 确保字符串以空字符结尾
-		return;     // 读取完毕，直接返回
+		return;		// 读取完毕，直接返回
 	}
 	int r;
 	int len = 0;		// 当前命令的逻辑长度
@@ -394,7 +432,7 @@ void readline(char *buf, u_int n)
 		else if (c == '\r' || c == '\n')
 		{ // 回车键
 			buf[len] = 0;
-			//printf("\n"); // 移动到下一行
+			// printf("\n"); // 移动到下一行
 			return;
 		}
 		else if (c == 0x05)
@@ -475,11 +513,11 @@ void readline(char *buf, u_int n)
 		}
 	}
 	debugf("line too long\n");
-	while ((r = read(0, buf, 1)) == 1 && buf[0] != '\r' && buf[0] != '\n') {
+	while ((r = read(0, buf, 1)) == 1 && buf[0] != '\r' && buf[0] != '\n')
+	{
 		;
 	}
 	buf[0] = 0;
-
 }
 
 // **新增：添加指令到历史记录**
@@ -507,20 +545,24 @@ void add_to_history(const char *cmd)
 	}
 	history_index = history_count; // 每次添加新命令后，将历史索引重置到末尾
 	int fd = open(HISTFILE, O_CREAT | O_WRONLY | O_TRUNC);
-	if (fd < 0) {
+	if (fd < 0)
+	{
 		debugf("history: failed to open %s\n", HISTFILE);
 		return;
 	}
 
 	// 遍历内存中的所有历史记录并写入文件
-	for (int i = 0; i < history_count; i++) {
+	for (int i = 0; i < history_count; i++)
+	{
 		int len = strlen(history_commands[i]);
-		if (write(fd, history_commands[i], len) != len) {
+		if (write(fd, history_commands[i], len) != len)
+		{
 			debugf("history: failed to write command\n");
 			close(fd);
 			return;
 		}
-		if (write(fd, "\n", 1) != 1) {
+		if (write(fd, "\n", 1) != 1)
+		{
 			debugf("history: failed to write newline\n");
 			close(fd);
 			return;
@@ -530,7 +572,7 @@ void add_to_history(const char *cmd)
 	close(fd);
 }
 
-int history(int argc, char **argv)
+int builtin_history(int argc, char **argv)
 {
 	if (argc > 1)
 	{
@@ -538,12 +580,66 @@ int history(int argc, char **argv)
 		return -1;
 	}
 
-	// 需要修改为输出文件的内容而不是直接输出数组内容
-	for (int i = 0; i < history_count; i++)
+	int fd;
+	char buf[512];
+	int n;
+
+	// 打开历史文件
+	if ((fd = open(HISTFILE, O_RDONLY)) < 0)
 	{
-		printf("%s\n", history_commands[i]);
+		printf("history: cannot open %s\n", HISTFILE);
+		return -1;
 	}
+
+	// 循环读取文件内容并打印到标准输出
+	while ((n = read(fd, buf, sizeof(buf) - 1)) > 0)
+	{
+		if (write(1, buf, n) != n)
+		{
+			printf("history: write error\n");
+			close(fd);
+			return -1;
+		}
+	}
+
+	if (n < 0)
+	{
+		printf("history: read error\n");
+	}
+
+	close(fd);
 	return 0;
+}
+
+int builtin_pwd(int argc, char **argv)
+{
+	// 1. 严格检查参数数量
+	if (argc > 1)
+	{
+		printf("pwd: expected 0 arguments; got %d\n", argc - 1);
+		return 2;
+	}
+
+	// 2. 诊断：检查 env 指针本身是否有效
+	if (env == NULL)
+	{
+		printf("pwd: critical error, 'env' pointer is NULL!\n");
+		return 1;
+	}
+
+	// 3. 诊断：打印 env_cwd 的内存地址和第一个字符的ASCII码
+	// 这可以帮助我们确认指针指向的位置和内容的初始部分是否正确
+	//printf("Debug: env_cwd address: %x, first char: %d\n", env->env_cwd, (int)env->env_cwd[0]);
+
+	// 4. 核心功能：打印工作目录
+	char tem_path[1024] = {0};
+	strcpy(tem_path,env->env_cwd);
+	printf("%s\n",tem_path);
+	return 0;
+}
+
+int builtin_cd(int argc, char **argv) {
+    return 0;
 }
 
 char buf[1024];
@@ -605,15 +701,45 @@ int main(int argc, char **argv)
 			printf("\n$ ");
 		}
 		readline(buf, sizeof buf);
-		add_to_history(buf); // 将原始输入的命令字符串添加到历史
+		if (strlen(buf) > 0)
+		{
+			add_to_history(buf);
+		}
 
 		// 如果命令为空白行或只有注释，parsecmd 可能返回 argc=0
-		if (buf[0] == '\0' && !iscons(0)) {
+		if (buf[0] == '\0' && !iscons(0))
+		{
 			exit();
 		}
 		if (buf[0] == '#')
 		{
 			continue; // 继续下一个循环
+		}
+		char cmd_copy[1024];
+		strcpy(cmd_copy, buf); // 备份命令
+
+		char *argv_main[MAXARGS];
+		int argc_main = 0;
+		char *t;
+
+		// 解析命令和参数，只为了判断是否是 cd
+		gettoken(cmd_copy, 0);
+		if (gettoken(0, &t) == 'w')
+		{
+			argv_main[argc_main++] = t;
+			while (gettoken(0, &t) == 'w' && argc_main < MAXARGS - 1)
+			{
+				argv_main[argc_main++] = t;
+			}
+			argv_main[argc_main] = NULL;
+		}
+
+		// 检查第一个参数是否为 "cd"
+		if (argc_main > 0 && strcmp(argv_main[0], "cd") == 0)
+		{
+			// 如果是 cd，就在父进程中直接执行并继续循环
+			builtin_cd(argc_main, argv_main);
+			continue; // 跳过 fork-runcmd 流程
 		}
 
 		if (echocmds)

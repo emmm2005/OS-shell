@@ -14,5 +14,6 @@ char *strcat(char *dest, const char *src);
 char *strncat(char *dest, const char *src, int n);
 void *memmove(void *dest, const void *src, size_t n);
 int isspace(int c);
+char *strtok(char *str, const char *delim);
 
 #endif
